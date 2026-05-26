@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STM32 CAN 总线控制架构 v3.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0c10;
+    --bg2:       #0f1218;
+    --bg3:       #151921;
+    --border:    #1e2530;
+    --accent:    #00d4ff;
+    --accent2:   #7c5cfc;
+    --accent3:   #00ff94;
+    --warn:      #ff8c42;
+    --danger:    #ff4d6d;
+    --text:      #c9d1e0;
+    --text-dim:  #5a6478;
+    --text-head: #eef0f5;
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'Noto Sans SC', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ── grid lines background ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── layout ── */
+  .wrapper {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 32px 80px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── header ── */
+  .site-header {
+    padding: 56px 0 40px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 56px;
+    position: relative;
+  }
+
+  .site-header::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    width: 120px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.2);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    padding: 4px 12px;
+    border-radius: 2px;
+    margin-bottom: 20px;
+    text-transform: uppercase;
+  }
+
+  .badge::before { content: '◈'; font-size: 9px; }
+
+  h1.title {
+    font-family: var(--mono);
+    font-size: clamp(22px, 3vw, 32px);
+    font-weight: 700;
+    color: var(--text-head);
+    letter-spacing: -0.5px;
+    line-height: 1.2;
+    margin-bottom: 10px;
+  }
+
+  h1.title span { color: var(--accent); }
+
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 13px;
+    font-family: var(--mono);
+    letter-spacing: 0.5px;
+  }
+
+  .meta-row {
+    display: flex;
+    gap: 24px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+
+  .meta-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .meta-tag .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent3);
+    box-shadow: 0 0 6px var(--accent3);
+  }
+
+  /* ── section ── */
+  section {
+    margin-bottom: 52px;
+  }
+
+  h2 {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  h2::before {
+    content: attr(data-n);
+    color: var(--text-dim);
+    font-size: 11px;
+    min-width: 28px;
+  }
+
+  h2::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--border), transparent);
+    margin-left: 8px;
+  }
+
+  h3 {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent2);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin: 24px 0 12px;
+  }
+
+  p {
+    color: var(--text);
+    margin-bottom: 12px;
+    font-size: 14px;
+    line-height: 1.75;
+  }
+
+  /* ── callout boxes ── */
+  .callout {
+    border-left: 3px solid;
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+  }
+
+  .callout-warn {
+    border-color: var(--warn);
+    background: rgba(255,140,66,0.06);
+    color: #e8a76a;
+  }
+
+  .callout-ok {
+    border-color: var(--accent3);
+    background: rgba(0,255,148,0.05);
+    color: #5de8a8;
+  }
+
+  .callout-danger {
+    border-color: var(--danger);
+    background: rgba(255,77,109,0.06);
+    color: #f08090;
+  }
+
+  .callout-info {
+    border-color: var(--accent2);
+    background: rgba(124,92,252,0.07);
+    color: #a090e8;
+  }
+
+  .callout strong {
+    display: block;
+    margin-bottom: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.7;
+  }
+
+  /* ── code blocks ── */
+  pre {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px 24px;
+    overflow-x: auto;
+    margin: 16px 0;
+    position: relative;
+  }
+
+  pre::before {
+    content: attr(data-lang);
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: #c9d1e0;
+  }
+
+  .kw  { color: #7c9fff; }
+  .ty  { color: #5de8a8; }
+  .cm  { color: #3d4f6a; font-style: italic; }
+  .st  { color: #f0c87a; }
+  .nu  { color: #ff9f7e; }
+  .fn  { color: #c9a0ff; }
+  .pp  { color: var(--accent); }
+  .new { color: var(--warn); font-weight: 600; }
+
+  /* ── diagram / ascii art ── */
+  .diagram {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 24px;
+    overflow-x: auto;
+    margin: 16px 0;
+  }
+
+  .diagram pre {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .diagram code {
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.8;
+  }
+
+  /* ── comparison table ── */
+  .table-wrap { overflow-x: auto; margin: 16px 0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead tr {
+    background: rgba(0,212,255,0.06);
+    border-bottom: 1px solid rgba(0,212,255,0.2);
+  }
+
+  th {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 10px 14px;
+    text-align: left;
+  }
+
+  td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  tbody tr:hover { background: rgba(255,255,255,0.015); }
+
+  td.ok   { color: var(--accent3); }
+  td.warn { color: var(--warn); }
+  td.bad  { color: var(--danger); }
+
+  /* ── principle cards ── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+    background: var(--accent);
+  }
+
+  .card:nth-child(3n+2)::before { background: var(--accent2); }
+  .card:nth-child(3n+3)::before { background: var(--accent3); }
+
+  .card:hover { border-color: rgba(0,212,255,0.3); }
+
+  .card-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+
+  .card-title {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-head);
+    margin-bottom: 6px;
+  }
+
+  .card-body {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  /* ── arch flow diagram ── */
+  .arch-flow {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 32px 24px;
+    margin: 16px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .flow-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .flow-box {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8px 18px;
+    color: var(--text);
+    white-space: nowrap;
+    font-size: 12px;
+  }
+
+  .flow-box.accent  { border-color: rgba(0,212,255,0.4); color: var(--accent); }
+  .flow-box.accent2 { border-color: rgba(124,92,252,0.4); color: var(--accent2); }
+  .flow-box.accent3 { border-color: rgba(0,255,148,0.4); color: var(--accent3); }
+  .flow-box.warn    { border-color: rgba(255,140,66,0.4); color: var(--warn); }
+
+  .flow-arrow {
+    color: var(--text-dim);
+    font-size: 16px;
+    padding: 0 4px;
+    line-height: 1;
+  }
+
+  .flow-down {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 auto;
+  }
+
+  .flow-split {
+    display: flex;
+    gap: 40px;
+    align-items: flex-start;
+    margin-top: 0;
+  }
+
+  .flow-branch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  /* ── budget viz ── */
+  .budget-bar {
+    display: flex;
+    height: 32px;
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 16px 0;
+    border: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .budget-seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(0,0,0,0.7);
+    font-weight: 600;
+    transition: flex 0.3s;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .seg-pdo   { flex: 4; background: var(--accent); }
+  .seg-event { flex: 1; background: var(--accent2); color: #fff; }
+  .seg-sdo   { flex: 1; background: var(--warn); }
+  .seg-hb    { flex: 1; background: var(--accent3); }
+
+  .budget-legend {
+    display: flex;
+    gap: 20px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    flex-wrap: wrap;
+  }
+
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 1px;
+  }
+
+  /* ── nav ── */
+  .toc {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px 24px;
+    margin-bottom: 40px;
+  }
+
+  .toc-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .toc-list {
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 4px 24px;
+  }
+
+  .toc-list li a {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-family: var(--mono);
+    font-size: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    padding: 3px 0;
+    transition: color 0.15s;
+  }
+
+  .toc-list li a:hover { color: var(--accent); }
+
+  .toc-list li a span:first-child {
+    color: rgba(0,212,255,0.3);
+    font-size: 10px;
+    min-width: 20px;
+  }
+
+  /* ── footer ── */
+  .doc-footer {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* ── scroll indicator ── */
+  .progress-bar {
+    position: fixed;
+    top: 0; left: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    z-index: 100;
+    transition: width 0.1s;
+    width: 0%;
+  }
+
+  /* ── animations ── */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  section { animation: fadeIn 0.4s ease both; }
+  section:nth-child(2)  { animation-delay: 0.05s; }
+  section:nth-child(3)  { animation-delay: 0.10s; }
+  section:nth-child(4)  { animation-delay: 0.15s; }
+  section:nth-child(5)  { animation-delay: 0.20s; }
+  section:nth-child(6)  { animation-delay: 0.25s; }
+  section:nth-child(7)  { animation-delay: 0.30s; }
+  section:nth-child(8)  { animation-delay: 0.35s; }
+  section:nth-child(9)  { animation-delay: 0.40s; }
+
+  ul.list {
+    list-style: none;
+    padding: 0;
+    margin: 12px 0;
+  }
+
+  ul.list li {
+    padding: 4px 0 4px 20px;
+    position: relative;
+    font-size: 13.5px;
+    color: var(--text);
+  }
+
+  ul.list li::before {
+    content: '▸';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-size: 10px;
+    top: 7px;
+  }
+
+  @media (max-width: 600px) {
+    .wrapper { padding: 0 16px 60px; }
+    .flow-split { flex-direction: column; align-items: center; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="prog"></div>
+
+<div class="wrapper">
+
+  <!-- ── HEADER ── -->
+  <header class="site-header">
+    <div class="badge">Technical Document · v5.0</div>
+    <h1 class="title">STM32 CAN <span>总线控制架构</span></h1>
+    <p class="subtitle">FIFO + 调度器 + 邮箱中断 + 双总线切换 + Bus Budget + RX反馈建模 + TDMA + 可观测性 + 故障隔离</p>
+    <div class="meta-row">
+      <span class="meta-tag"><span class="dot"></span>平台：STM32F405 bxCAN</span>
+      <span class="meta-tag"><span class="dot" style="background:var(--accent2);box-shadow:0 0 6px var(--accent2)"></span>协议参考：CANopen / CiA402</span>
+      <span class="meta-tag"><span class="dot" style="background:var(--warn);box-shadow:0 0 6px var(--warn)"></span>适用：多电机机器人控制系统</span>
+    </div>
+  </header>
+
+  <!-- ── TOC ── -->
+  <nav class="toc">
+    <div class="toc-title">// 目录</div>
+    <ul class="toc-list">
+      <li><a href="#s0"><span>00</span><span>文档对比与升级摘要</span></a></li>
+      <li><a href="#s1"><span>01</span><span>核心认知：CAN是共享资源</span></a></li>
+      <li><a href="#s2"><span>02</span><span>数据结构设计</span></a></li>
+      <li><a href="#s3"><span>03</span><span>发送语义：PDO vs FIFO</span></a></li>
+      <li><a href="#s4"><span>04</span><span>Bus Budget 总线预算</span></a></li>
+      <li><a href="#s5"><span>05</span><span>调度器实现（修正版）</span></a></li>
+      <li><a href="#s6"><span>06</span><span>双总线切换</span></a></li>
+      <li><a href="#s7"><span>07</span><span>RX反馈：全双工负载建模</span></a></li>
+      <li><a href="#s8"><span>08</span><span>TDMA 时间片调度</span></a></li>
+      <li><a href="#s9"><span>09</span><span>总线负载可观测</span></a></li>
+      <li><a href="#s10"><span>10</span><span>抗拥塞设计</span></a></li>
+      <li><a href="#s11"><span>11</span><span>CiA402 分布式架构</span></a></li>
+      <li><a href="#s12"><span>12</span><span>可观测性：总线录播器</span></a></li>
+      <li><a href="#s13"><span>13</span><span>邮箱中断 while 的设计意图</span></a></li>
+      <li><a href="#s14"><span>14</span><span>定时器中断的作用</span></a></li>
+      <li><a href="#s15"><span>15</span><span>TPDO 对发送的影响</span></a></li>
+      <li><a href="#s16"><span>16</span><span>自动重传与故障隔离</span></a></li>
+      <li><a href="#s17"><span>17</span><span>实现路线图</span></a></li>
+      <li><a href="#s18"><span>18</span><span>工程原则总结</span></a></li>
+    </ul>
+  </nav>
+
+  <!-- ── S0: 对比摘要 ── -->
+  <section id="s0">
+    <h2 data-n="00">文档对比与升级摘要</h2>
+    <p>本文档综合全部设计讨论，在 v3.0 基础上新增 RX 反馈全双工负载建模、TDMA 时间片调度、Phase Shift 设计修正、总线录播器可观测性，以及面向二十几个机器人项目通用框架的实现路线图。</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>版本</th><th>核心增量</th><th>解决的问题</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>v1.0</td><td>三优先级队列 + 邮箱中断</td><td class="bad">无 bus_id / latest-wins 混用 / 无负载统计</td></tr>
+          <tr><td>v2.0</td><td>双总线 + 发送语义区分</td><td class="warn">修正硬编码总线 / 覆写槽 vs FIFO / 队列满策略</td></tr>
+          <tr><td>v3.0</td><td>Bus Budget + 可观测 + CiA402</td><td class="ok">优先级饿死防护 / 分布式节点模型</td></tr>
+          <tr><td>v4.0</td><td>RX建模 + TDMA + 录播器 + 路线图</td><td class="ok">全双工负载 / 确定性调度 / 可观测 / 通用框架路径</td></tr>
+          <tr><td>v5.0 本文档</td><td>邮箱while分析 + 定时器中断 + TPDO影响 + 故障隔离</td><td class="ok">实现细节答疑 / 自动重传风险 / 分层故障隔离</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── S1: 核心认知 ── -->
+  <section id="s1">
+    <h2 data-n="01">核心认知：CAN 是共享实时资源</h2>
+    <p>CAN 总线不是普通通信接口。从资源调度角度看：</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>类比维度</th><th>CPU / RTOS</th><th>CAN 总线</th></tr></thead>
+        <tbody>
+          <tr><td>共享资源</td><td>CPU 时间片</td><td>总线 bit 时间</td></tr>
+          <tr><td>任务单元</td><td>线程 / 任务</td><td>CAN 帧</td></tr>
+          <tr><td>调度器</td><td>OS Scheduler</td><td>CAN_TxScheduler</td></tr>
+          <tr><td>资源计量</td><td>CPU 占用率</td><td>Bus Load %</td></tr>
+          <tr><td>过载处理</td><td>任务降级 / 抢占</td><td>帧降级 / Budget 限流</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-info">
+      <strong>本质结论</strong>
+      系统不是"CAN通信程序"，而是 Bus RTOS——实时总线调度系统。必须像管理CPU资源一样管理总线资源：调度、限流、监控、降级。
+    </div>
+  </section>
+
+  <!-- ── S2: 数据结构 ── -->
+  <section id="s2">
+    <h2 data-n="02">数据结构设计</h2>
+
+    <h3>2.1 总线标识与帧结构</h3>
+    <pre data-lang="C"><code><span class="kw">typedef</span> <span class="kw">enum</span> {
+    CAN_BUS_1 = <span class="nu">0</span>,
+    CAN_BUS_2 = <span class="nu">1</span>,
+    CAN_BUS_COUNT
+} <span class="ty">CanBusId</span>;
+
+<span class="kw">typedef</span> <span class="kw">enum</span> {
+    CAN_MSG_PDO,        <span class="cm">// 实时控制帧，覆写槽语义</span>
+    CAN_MSG_EVENT,      <span class="cm">// 事件帧，FIFO语义</span>
+    CAN_MSG_SDO,        <span class="cm">// 可靠事务帧，ACK+重发</span>
+    CAN_MSG_HEARTBEAT,  <span class="cm">// 心跳帧</span>
+} <span class="ty">CanMsgType</span>;
+
+<span class="kw">typedef</span> <span class="kw">struct</span> {
+    <span class="ty">CanBusId</span>   bus_id;         <span class="new">/* ★ 双总线切换关键字段 */</span>
+    <span class="ty">uint32_t</span>   id;
+    <span class="ty">uint8_t</span>    dlc;
+    <span class="ty">uint8_t</span>    data[<span class="nu">8</span>];
+    <span class="ty">CanMsgType</span> type;
+    <span class="ty">CanPrio</span>    priority;
+    <span class="ty">uint32_t</span>   enqueue_tick;   <span class="cm">// 队列积压检测</span>
+} <span class="ty">CanTxFrame</span>;</code></pre>
+
+    <h3>2.2 PDO Buffer（实时状态槽）</h3>
+    <p>PDO 不使用普通队列，而是每个控制节点持有一个覆写槽：</p>
+    <pre data-lang="C"><code><span class="kw">typedef</span> <span class="kw">struct</span> {
+    <span class="ty">CanTxFrame</span> latest;    <span class="cm">// 永远只保存最新值</span>
+    <span class="ty">uint8_t</span>    updated;   <span class="cm">// dirty flag</span>
+    <span class="ty">uint32_t</span>   node_id;
+} <span class="ty">PdoBuffer</span>;
+
+<span class="cm">// 控制器更新（不阻塞）</span>
+<span class="kw">static inline</span> <span class="kw">void</span> <span class="fn">pdo_update</span>(<span class="ty">PdoBuffer</span> *b, <span class="kw">const</span> <span class="ty">CanTxFrame</span> *f) {
+    b->latest  = *f;
+    b->updated = <span class="nu">1</span>;     <span class="cm">// 原子写，旧帧隐式丢弃</span>
+}
+
+<span class="cm">// 调度器取帧（由 Budget 驱动）</span>
+<span class="ty">bool</span> <span class="fn">pdo_pop</span>(<span class="ty">PdoBuffer</span> *b, <span class="ty">CanTxFrame</span> *out) {
+    <span class="kw">if</span> (!b->updated) <span class="kw">return</span> <span class="nu">false</span>;
+    *out = b->latest;
+    b->updated = <span class="nu">0</span>;
+    <span class="kw">return</span> <span class="nu">true</span>;
+}</code></pre>
+
+    <div class="callout callout-warn">
+      <strong>v1.0 / v2.0 问题</strong>
+      原文档将 PDO（实时控制帧）与 FIFO 混用，导致旧控制值积压。PDO Buffer 与 FIFO 是并列层级，不是替代关系：PDO Buffer 在上层处理覆写，FIFO 在下层处理事务消息保序。
+    </div>
+
+    <h3>2.3 按总线分离的发送队列</h3>
+    <pre data-lang="C"><code><span class="pp">#define</span> TX_QUEUE_DEPTH  <span class="nu">32</span>
+
+<span class="kw">static</span> <span class="ty">CanTxQueue</span>        s_tx_queue[CAN_BUS_COUNT];  <span class="cm">// 每条总线独立</span>
+<span class="kw">static</span> <span class="ty">PdoBuffer</span>         s_pdo_buf[MAX_MOTORS];       <span class="cm">// 每电机一个PDO槽</span>
+<span class="kw">static</span> <span class="ty">CAN_HandleTypeDef</span> *s_can_hdl[] = {
+    [CAN_BUS_1] = &hcan1,
+    [CAN_BUS_2] = &hcan2,
+};</code></pre>
+  </section>
+
+  <!-- ── S3: 发送语义 ── -->
+  <section id="s3">
+    <h2 data-n="03">发送语义：PDO Buffer vs FIFO</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>维度</th><th>PDO Buffer</th><th>EVENT / SDO FIFO</th></tr></thead>
+        <tbody>
+          <tr><td>数据关系</td><td class="ok">覆写（新替旧）</td><td>累加（严格保序）</td></tr>
+          <tr><td>是否保留历史</td><td>否</td><td class="ok">是</td></tr>
+          <tr><td>队列满行为</td><td>无队列，直接覆写</td><td>丢最旧 + 计数</td></tr>
+          <tr><td>适用消息</td><td>位置/力矩/速度指令</td><td>夹爪事件 / SDO配置</td></tr>
+          <tr><td>调度驱动</td><td>PDO Budget 周期取帧</td><td>空闲时 FIFO 出队</td></tr>
+          <tr><td>与FSM关系</td><td>ZeroErr PP 事务由FSM管理，不走PDO层</td><td>SDO层不重叠已有FSM重试逻辑</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-danger">
+      <strong>Priority Starvation 警告</strong>
+      若 PDO 无限优先（只要有 PDO 就跳过其他），Heartbeat / SDO / Event 永远发不出去。必须引入 Bus Budget 机制约束 PDO 的带宽占用比例。
+    </div>
+  </section>
+
+  <!-- ── S4: Bus Budget ── -->
+  <section id="s4">
+    <h2 data-n="04">Bus Budget：总线预算机制</h2>
+    <p>1Mbps CAN 总线，一帧约 130 bit，1ms 内理论最大约 7 帧。通过预算分配防止优先级饿死：</p>
+
+    <div class="budget-bar">
+      <div class="budget-seg seg-pdo">PDO ×4</div>
+      <div class="budget-seg seg-event">EVT ×1</div>
+      <div class="budget-seg seg-sdo">SDO ×1</div>
+      <div class="budget-seg seg-hb">HB ×1</div>
+    </div>
+    <div class="budget-legend">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span>PDO 实时控制 4/7</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--accent2)"></span>EVENT 事件 1/7</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--warn)"></span>SDO 配置 1/7</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--accent3)"></span>Heartbeat 1/7</span>
+    </div>
+
+    <pre data-lang="C"><code><span class="kw">typedef</span> <span class="kw">struct</span> {
+    <span class="ty">uint8_t</span> pdo_budget;    <span class="cm">// 每ms可发PDO帧数</span>
+    <span class="ty">uint8_t</span> event_budget;
+    <span class="ty">uint8_t</span> sdo_budget;
+    <span class="ty">uint8_t</span> hb_budget;
+} <span class="ty">BusBudget</span>;
+
+<span class="cm">// 1ms 定时器中断刷新预算</span>
+<span class="kw">void</span> <span class="fn">bus_budget_refresh</span>(<span class="ty">BusBudget</span> *b) {
+    b->pdo_budget   = <span class="nu">4</span>;
+    b->event_budget = <span class="nu">1</span>;
+    b->sdo_budget   = <span class="nu">1</span>;
+    b->hb_budget    = <span class="nu">1</span>;
+    <span class="cm">// 高负载时可动态缩减 PDO budget</span>
+    <span class="kw">if</span> (bus_load_get() > <span class="nu">80</span>) b->pdo_budget = <span class="nu">2</span>;
+}</code></pre>
+  </section>
+
+  <!-- ── S5: 调度器（修正版）── -->
+  <section id="s5">
+    <h2 data-n="05">调度器实现（修正版）</h2>
+
+    <h3>5.1 Phase Shift 的根本问题</h3>
+    <p>v3.0 的 Phase Shift 实现存在精度不匹配缺陷：</p>
+    <div class="callout callout-danger">
+      <strong>设计缺陷</strong>
+      Phase 单位是 μs，但调度器是 1ms 定时器 tick。同一 tick 内所有到期的 job 一次性入队，200μs 的 phase 偏移完全无效——所有电机仍然同时入队。
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>方案</th><th>机制</th><th>代价</th><th>适用场景</th></tr></thead>
+        <tbody>
+          <tr><td>方案A：μs 级定时器</td><td>定时器改为 100μs tick，phase 单位对齐</td><td class="warn">中断频率提高 10×，CPU 开销增加</td><td>需要严格帧级时序对齐</td></tr>
+          <tr><td>方案B：next_tick 自然错峰</td><td>每个电机自己的 next_tick 驱动，Budget 做上限保护</td><td class="ok">实现最简，无额外开销</td><td>✓ 推荐：多电机闭环控制</td></tr>
+          <tr><td>方案C：TDMA 时间片</td><td>预分配发送窗口，确定性调度</td><td>静态资源占用，电机数量受限</td><td>电机数量固定、需要硬实时</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>5.2 正确的调度器：next_tick 驱动，Budget 保护</h3>
+    <p>驱动力是每个电机自己的 <code>next_tick</code>，Budget 只是上限保护，不是"凑满配额去找电机发"。</p>
+    <pre data-lang="C"><code><span class="cm">// 定时器中断 1ms tick</span>
+<span class="kw">void</span> <span class="fn">CAN_Scheduler_Tick</span>(<span class="ty">CanBusId</span> bus)
+{
+    <span class="ty">uint32_t</span>  now = <span class="fn">get_tick_us</span>();
+    <span class="ty">BusBudget</span> *b  = &g_budget[bus];
+
+    <span class="kw">for</span> (<span class="ty">uint8_t</span> i = <span class="nu">0</span>; i < s_job_count[bus]; i++) {
+        <span class="ty">CanJob</span> *job = &s_jobs[bus][i];
+
+        <span class="kw">if</span> (now < job->next_tick) <span class="kw">continue</span>;  <span class="cm">// 未到期，跳过</span>
+
+        <span class="kw">if</span> (b->pdo_budget == <span class="nu">0</span>) <span class="kw">continue</span>;    <span class="cm">// budget 耗尽，推到下一tick</span>
+        <span class="cm">// next_tick 不更新：下次tick继续尝试，不丢失这次发送机会</span>
+
+        <span class="ty">CanTxFrame</span> frame = {.bus_id = bus, .type = CAN_MSG_PDO};
+        <span class="kw">if</span> (<span class="fn">pdo_pop</span>(&s_pdo_buf[i], &frame)) {   <span class="cm">// 有新值才发</span>
+            <span class="fn">can_tx_enqueue</span>(&frame);
+            b->pdo_budget--;
+        }
+        <span class="cm">// 无论是否发送，next_tick 都推进——电机周期不受控制器写入频率影响</span>
+        job->next_tick += job->period_us;
+    }
+
+    <span class="cm">// EVENT / SDO / HB 按各自 budget 处理（同 v3.0）</span>
+}</code></pre>
+
+    <div class="callout callout-ok">
+      <strong>关键设计点</strong>
+      到期了但 budget 耗尽 → next_tick 不更新，下一 tick 重试。到期了 PDO 槽没有新值 → next_tick 照常推进，不阻塞周期。两者行为分开处理。
+    </div>
+
+    <h3>5.3 定时器中断触发</h3>
+    <pre data-lang="C"><code><span class="kw">void</span> <span class="fn">TIM_PeriodElapsedCallback</span>(<span class="ty">TIM_HandleTypeDef</span> *htim) {
+    <span class="kw">if</span> (htim == &htim_can_sched) {
+        <span class="fn">bus_budget_refresh</span>(&g_budget[CAN_BUS_1]);
+        <span class="fn">bus_budget_refresh</span>(&g_budget[CAN_BUS_2]);
+        <span class="fn">CAN_Scheduler_Tick</span>(CAN_BUS_1);
+        <span class="fn">CAN_Scheduler_Tick</span>(CAN_BUS_2);
+    }
+}
+
+<span class="cm">// 邮箱空中断：只搬运，不决策</span>
+<span class="kw">void</span> <span class="fn">HAL_CAN_TxMailboxCompleteCallback</span>(<span class="ty">CAN_HandleTypeDef</span> *hcan) {
+    <span class="ty">CanBusId</span> bus = (hcan == &hcan1) ? CAN_BUS_1 : CAN_BUS_2;
+    <span class="kw">while</span> (<span class="fn">HAL_CAN_GetTxMailboxesFreeLevel</span>(hcan) > <span class="nu">0</span>) {
+        <span class="ty">CanTxFrame</span> frame;
+        <span class="kw">if</span> (!<span class="fn">tx_queue_pop</span>(&s_tx_queue[bus], &frame)) <span class="kw">break</span>;
+        <span class="ty">CAN_TxHeaderTypeDef</span> hdr = {.StdId=frame.id, .DLC=frame.dlc,
+                                    .IDE=CAN_ID_STD, .RTR=CAN_RTR_DATA};
+        <span class="ty">uint32_t</span> mb;
+        <span class="fn">HAL_CAN_AddTxMessage</span>(hcan, &hdr, frame.data, &mb);
+    }
+}</code></pre>
+  </section>
+
+  <!-- ── S6: 双总线切换 ── -->
+  <section id="s6">
+    <h2 data-n="06">双总线切换</h2>
+    <p>电机外设只持有 <code>bus_id</code>，不持有 <code>CAN_HandleTypeDef *</code>，与总线实现完全解耦。</p>
+
+    <pre data-lang="C"><code><span class="kw">typedef</span> <span class="kw">struct</span> {
+    <span class="ty">CanBusId</span>  bus;       <span class="new">/* 唯一总线绑定点，切换只改这里 */</span>
+    <span class="ty">uint32_t</span>  node_id;
+    <span class="ty">PdoBuffer</span> pdo;
+} <span class="ty">MotorDevice</span>;
+
+<span class="kw">void</span> <span class="fn">motor_send_pdo</span>(<span class="ty">MotorDevice</span> *m, <span class="ty">int32_t</span> target_pos) {
+    <span class="ty">CanTxFrame</span> f = {
+        .bus_id = m->bus,          <span class="cm">// 从设备取，不硬编码</span>
+        .id     = m->node_id,
+        .dlc    = <span class="nu">8</span>,
+        .type   = CAN_MSG_PDO,
+    };
+    <span class="fn">pack_position</span>(f.data, target_pos);
+    <span class="fn">pdo_update</span>(&m->pdo, &f);
+}
+
+motor->bus = CAN_BUS_2;  <span class="new">// 切换总线：一行，零改发送逻辑</span></code></pre>
+  </section>
+
+  <!-- ── S7: RX 反馈 ── -->
+  <section id="s7">
+    <h2 data-n="07">RX 反馈：全双工负载建模</h2>
+    <p>v3.0 的 Bus Load 统计只计了 TX 侧。CAN 总线是共享介质，RX 帧同样占用带宽，必须双向建模。</p>
+
+    <h3>7.1 三种反馈模式</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>模式</th><th>触发方式</th><th>流量特征</th><th>危险性</th></tr></thead>
+        <tbody>
+          <tr><td>SDO 响应</td><td>发一条指令，延迟后返回单帧</td><td>低频、不定时</td><td class="ok">低</td></tr>
+          <tr><td>异步 TPDO</td><td>节点状态变化自主上报</td><td>随机、不可预测</td><td class="warn">中</td></tr>
+          <tr><td>同步 TPDO 风暴</td><td>发 SYNC 帧，所有节点同时回</td><td>瞬时大量，N×M 帧</td><td class="bad">极高，主要拥塞源</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>7.2 TPDO 风暴的量化</h3>
+    <div class="callout callout-danger">
+      <strong>最坏情况计算</strong>
+      6个电机 × 3个TPDO/电机 = 18帧同时竞争总线。130μs × 18 = 2340μs，超过两个 1ms 控制周期。下一轮 PDO 指令发送被整体阻塞。
+    </div>
+
+    <pre data-lang="C"><code><span class="cm">// 全双工 Bus Load 正确公式</span>
+<span class="cm">// Bus_Load = (TX_bits + RX_bits) / (window_us × bitrate_Mbps)</span>
+
+<span class="kw">void</span> <span class="fn">HAL_CAN_RxFifo0MsgPendingCallback</span>(<span class="ty">CAN_HandleTypeDef</span> *hcan) {
+    <span class="ty">CAN_RxHeaderTypeDef</span> hdr;
+    <span class="ty">uint8_t</span> data[<span class="nu">8</span>];
+    <span class="fn">HAL_CAN_GetRxMessage</span>(hcan, CAN_RX_FIFO0, &hdr, data);
+
+    <span class="ty">CanBusId</span> bus = (hcan == &hcan1) ? CAN_BUS_1 : CAN_BUS_2;
+
+    <span class="cm">// 纳入负载统计（与TX共享同一统计器）</span>
+    <span class="fn">bus_stats_on_rx</span>(&g_stats[bus], hdr.DLC);
+
+    <span class="cm">// 总线录播（见第12节）</span>
+    <span class="fn">can_log</span>(bus, DIR_RX, hdr.StdId, hdr.DLC, data);
+
+    <span class="cm">// 分发到对应电机驱动</span>
+    <span class="fn">can_rx_dispatch</span>(bus, hdr.StdId, hdr.DLC, data);
+}</code></pre>
+
+    <h3>7.3 TPDO 风暴抑制：Inhibit Time</h3>
+    <p>通过 SDO 配置每个节点的 Inhibit Time，强制同一 PDO 两次上报之间的最小间隔，把风暴展开成流：</p>
+    <pre data-lang="C"><code><span class="cm">// 按节点编号错开 Inhibit offset，单位 100μs</span>
+<span class="kw">for</span> (<span class="ty">uint8_t</span> i = <span class="nu">0</span>; i < motor_count; i++) {
+    <span class="ty">uint16_t</span> inhibit_100us = i * <span class="nu">2</span>;  <span class="cm">// 每个电机错开 200μs</span>
+    <span class="fn">sdo_write</span>(motors[i].node_id,
+              <span class="nu">0x1800</span>, <span class="nu">0x03</span>,          <span class="cm">// TPDO1 Inhibit Time 对象</span>
+              inhibit_100us);
+}
+<span class="cm">// 效果：Motor0 t=0μs，Motor1 t=200μs，Motor2 t=400μs...</span></code></pre>
+
+    <h3>7.4 TPDO 频率分级</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>数据类型</th><th>建议频率</th><th>理由</th></tr></thead>
+        <tbody>
+          <tr><td>位置 + 速度</td><td>跟随 SYNC（500Hz）</td><td>闭环必须，不可降频</td></tr>
+          <tr><td>电流</td><td>100Hz（每5个SYNC发一次）</td><td>监控用，不需要高频</td></tr>
+          <tr><td>温度 / 电压</td><td>10Hz</td><td>保护用，慢变量</td></tr>
+          <tr><td>错误码 / 诊断</td><td>按需 SDO 查询，不主动上报</td><td>避免占用实时带宽</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>7.5 发送预算纳入 RX 预留</h3>
+    <pre data-lang="C"><code><span class="kw">void</span> <span class="fn">bus_budget_refresh</span>(<span class="ty">BusBudget</span> *b, <span class="ty">uint8_t</span> active_motors) {
+    <span class="ty">uint8_t</span> max_frames = <span class="nu">7</span>;                       <span class="cm">// 1ms @ 1Mbps 理论最大帧数</span>
+    <span class="ty">uint8_t</span> rx_reserved = active_motors * <span class="nu">1</span>;     <span class="cm">// 每电机预留1帧TPDO（位置+速度）</span>
+    <span class="ty">uint8_t</span> tx_total    = max_frames - rx_reserved;
+
+    b->pdo_budget   = tx_total * <span class="nu">4</span> / <span class="nu">7</span>;          <span class="cm">// TX 中 PDO 占 4/7</span>
+    b->event_budget = <span class="nu">1</span>;
+    b->sdo_budget   = <span class="nu">1</span>;
+    b->hb_budget    = <span class="nu">1</span>;
+
+    <span class="kw">if</span> (g_stats->load_pct > <span class="nu">80</span>) b->pdo_budget >>= <span class="nu">1</span>; <span class="cm">// 过载动态降级</span>
+}</code></pre>
+  </section>
+
+  <!-- ── S8: TDMA ── -->
+  <section id="s8">
+    <h2 data-n="08">TDMA 时间片调度</h2>
+
+    <h3>8.1 TDMA 本质</h3>
+    <p>Time Division Multiple Access（时分多址）：将总线周期切成 N 个时间片，每片预分配给一个电机。到了它的时间片，它可以发也可以不发；其他时间片它不发。</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>维度</th><th>Budget 限流（v3.0）</th><th>TDMA 时间片（v4.0）</th></tr></thead>
+        <tbody>
+          <tr><td>调度方式</td><td>统计限流，到期竞争</td><td>预分配，按槽发送</td></tr>
+          <tr><td>最坏延迟</td><td>不确定（budget 耗尽时推迟）</td><td class="ok">严格确定（最多等一个周期）</td></tr>
+          <tr><td>总线利用率</td><td class="ok">高（空闲 budget 可被占用）</td><td>低（时间片空着就浪费）</td></tr>
+          <tr><td>实现复杂度</td><td class="ok">低</td><td>中</td></tr>
+          <tr><td>工业标准</td><td>CANopen PDO + Inhibit</td><td>TTCAN（ISO 11898-4）</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>8.2 时间片结构</h3>
+    <pre data-lang="text"><code>1ms 周期，6个电机，每片 ~150μs：
+
+│◀──────────────────────── 1000μs ────────────────────────▶│
+│  M0  │  M1  │  M2  │  M3  │  M4  │  M5  │  EVENT/SDO  │
+│150μs │150μs │150μs │150μs │150μs │150μs │    100μs    │
+
+每片内：
+├─ TX: 该电机 PDO 指令（~130μs）
+└─ RX: 该电机 TPDO 反馈（同窗口内自然返回）
+TX 与 RX 对齐同一时间片，不互相干扰。</code></pre>
+
+    <h3>8.3 TDMA 与 Budget 的矛盾：电机数量超限</h3>
+    <div class="callout callout-warn">
+      <strong>静态分配的问题</strong>
+      12个电机静态分配 → 1ms ÷ 12 = 83μs/片。一帧 130μs，一个时间片放不下一帧。TDMA 对电机数量有硬上限：最大电机数 = 1000μs ÷ 每片最小宽度。
+    </div>
+
+    <h3>8.4 解决方案：动态活跃集合</h3>
+    <p>不给所有电机预留时间片，只为<strong>当前活跃的电机</strong>分配：</p>
+    <pre data-lang="C"><code><span class="kw">typedef</span> <span class="kw">enum</span> {
+    MOTOR_SLEEP,    <span class="cm">// 不占时间片，只发心跳</span>
+    MOTOR_HOLD,     <span class="cm">// 低频时间片（50Hz），保持位置</span>
+    MOTOR_ACTIVE,   <span class="cm">// 高频时间片（500Hz），闭环运动</span>
+} <span class="ty">MotorSchedState</span>;
+
+<span class="cm">// 活跃集合变化时重新分配时间片</span>
+<span class="kw">void</span> <span class="fn">tdma_recompute</span>(<span class="ty">CanBusId</span> bus) {
+    <span class="ty">uint8_t</span> active_count = <span class="nu">0</span>;
+    <span class="kw">for</span> (<span class="ty">uint8_t</span> i = <span class="nu">0</span>; i < motor_count; i++)
+        <span class="kw">if</span> (motors[i].sched == MOTOR_ACTIVE) active_count++;
+
+    <span class="ty">uint32_t</span> slot_us = (<span class="nu">1000</span> - <span class="nu">100</span>) / active_count; <span class="cm">// 预留100μs给EVENT</span>
+    <span class="ty">uint8_t</span>  slot_idx = <span class="nu">0</span>;
+    <span class="kw">for</span> (<span class="ty">uint8_t</span> i = <span class="nu">0</span>; i < motor_count; i++) {
+        <span class="kw">if</span> (motors[i].sched != MOTOR_ACTIVE) <span class="kw">continue</span>;
+        s_tdma_slots[bus][slot_idx].motor_idx  = i;
+        s_tdma_slots[bus][slot_idx].start_us   = slot_idx * slot_us;
+        slot_idx++;
+    }
+    s_tdma_slot_count[bus] = active_count;
+}</code></pre>
+
+    <h3>8.5 三级调度状态</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>状态</th><th>发送频率</th><th>时间片</th><th>典型场景</th></tr></thead>
+        <tbody>
+          <tr><td>MOTOR_ACTIVE</td><td>500Hz（2ms）</td><td class="ok">占有高频时间片</td><td>摆动腿、正在运动的关节</td></tr>
+          <tr><td>MOTOR_HOLD</td><td>50Hz（20ms）</td><td class="warn">低频竞争发送</td><td>支撑腿、保持位置的关节</td></tr>
+          <tr><td>MOTOR_SLEEP</td><td>1Hz 心跳</td><td class="ok">不占控制时间片</td><td>待机电机、暂停关节</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-info">
+      <strong>工程建议</strong>
+      TDMA 适合电机数量固定、需要硬实时保证的场景。如果同时活跃电机数量变化频繁（秒级以下切换），重计算开销本身会引入抖动，此时 Budget 限流反而更稳定。两者可以混用：ACTIVE 电机用 TDMA，HOLD/SLEEP 电机用 Budget 竞争。
+    </div>
+  </section>
+
+  <!-- ── S9: 总线负载可观测 ── -->
+  <section id="s9">
+    <h2 data-n="09">总线负载可观测</h2>
+    <p>CAN 控制器不上报带宽占用。Bus Load 的正确定义是<strong>总线 bit 占用时间 / 总时间</strong>，而非帧数比例。TX 和 RX 必须共同纳入统计。</p>
+
+    <h3>9.1 统计实现</h3>
+    <pre data-lang="C"><code><span class="kw">typedef</span> <span class="kw">struct</span> {
+    <span class="ty">uint32_t</span> used_bits;      <span class="cm">// 当前窗口 TX+RX 总 bit 数</span>
+    <span class="ty">uint8_t</span>  load_pct;      <span class="cm">// 0~100%</span>
+    <span class="ty">uint32_t</span> tx_drop_count; <span class="cm">// TX 丢帧计数</span>
+    <span class="ty">uint32_t</span> rx_frame_count;<span class="cm">// RX 帧总数</span>
+    <span class="ty">uint16_t</span> queue_depth;   <span class="cm">// 当前队列水位</span>
+} <span class="ty">BusStats</span>;
+
+<span class="cm">// TX / RX 中断各调用一次</span>
+<span class="kw">void</span> <span class="fn">bus_stats_on_frame</span>(<span class="ty">BusStats</span> *s, <span class="ty">uint8_t</span> dlc) {
+    <span class="cm">// 标准帧：SOF(1)+仲裁(11)+控制(6)+数据(dlc×8)+CRC(16)+ACK(2)+EOF(7) + 填充估算</span>
+    s->used_bits += <span class="nu">44</span> + dlc * <span class="nu">8</span> + <span class="nu">25</span>;
+}
+
+<span class="cm">// 10ms 窗口计算，在定时器中断里调用</span>
+<span class="kw">void</span> <span class="fn">bus_stats_window_update</span>(<span class="ty">BusStats</span> *s) {
+    s->load_pct  = (<span class="ty">uint8_t</span>)(s->used_bits / <span class="nu">100</span>); <span class="cm">// 10000μs × 1bit/μs = 10000</span>
+    s->used_bits = <span class="nu">0</span>;
+}</code></pre>
+
+    <h3>9.2 动态降级触发</h3>
+    <pre data-lang="C"><code><span class="kw">if</span> (g_stats[bus].load_pct > <span class="nu">80</span>) {
+    g_budget[bus].pdo_budget >>= <span class="nu">1</span>;          <span class="cm">// PDO 减半</span>
+    <span class="fn">log_warn</span>(<span class="st">"CAN%d overload %d%%"</span>, bus, g_stats[bus].load_pct);
+}
+<span class="kw">if</span> (g_stats[bus].load_pct > <span class="nu">95</span>) {
+    <span class="fn">fault_report</span>(FAULT_CAN_OVERLOAD, bus);   <span class="cm">// 上报故障</span>
+}</code></pre>
+  </section>
+
+  <!-- ── S10: 抗拥塞 ── -->
+  <section id="s10">
+    <h2 data-n="10">抗拥塞设计</h2>
+    <p>总线拥塞不只是设计问题，也是运行时问题。典型触发场景：节点同时上电、SDO 重发风暴、心跳相位重合、SYNC 触发 TPDO 风暴。</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>手段</th><th>机制</th><th>解决的问题</th></tr></thead>
+        <tbody>
+          <tr><td>next_tick 自然错峰</td><td>注册时设置不同初始 next_tick</td><td>多电机固定周期帧自然分散</td></tr>
+          <tr><td>Bus Budget</td><td>每 ms 限制各类型帧数上限</td><td>防止 PDO 饿死其他类型</td></tr>
+          <tr><td>Inhibit Time</td><td>SDO 配置节点 TPDO 最小发送间隔</td><td>TPDO 风暴展开成流</td></tr>
+          <tr><td>TPDO 频率分级</td><td>位置高频，电流/温度低频</td><td>降低 RX 总带宽占用</td></tr>
+          <tr><td>动态降级</td><td>负载 >80% 压缩 PDO budget</td><td>突发流量 / 异常节点重发</td></tr>
+          <tr><td>PDO 覆写槽</td><td>旧控制帧被新值隐式丢弃</td><td>防止控制帧在队列积压</td></tr>
+          <tr><td>SDO 发送互斥</td><td>等待响应期间 sdo_budget=0</td><td>防止 SDO 请求与响应交错</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>SDO 响应窗口保护</h3>
+    <pre data-lang="C"><code><span class="cm">// SDO 状态机：发出请求后冻结 sdo_budget，直到收到响应</span>
+<span class="kw">if</span> (sdo_state[bus] == SDO_WAIT_RESPONSE) {
+    g_budget[bus].sdo_budget = <span class="nu">0</span>;  <span class="cm">// 不发新的SDO请求</span>
+}
+
+<span class="cm">// RX 中断收到 SDO 响应后恢复</span>
+<span class="kw">if</span> (is_sdo_response(frame_id)) {
+    sdo_state[bus] = SDO_IDLE;
+    <span class="cm">// budget 在下一次 refresh 时自动恢复</span>
+}</code></pre>
+  </section>
+
+  <!-- ── S11: CiA402 ── -->
+  <section id="s11">
+    <h2 data-n="11">CiA402 分布式电机架构</h2>
+    <p>分布式控制的本质：主控发目标值，节点本地闭环。主控不控制 PWM，只发位置 / 力矩 / 速度目标。</p>
+
+    <div class="arch-flow">
+      <div class="flow-row">
+        <div class="flow-box accent">步态规划 / 轨迹生成</div>
+      </div>
+      <div class="flow-down"></div>
+      <div class="flow-row">
+        <div class="flow-box accent2">Command Aggregator</div>
+      </div>
+      <div class="flow-down"></div>
+      <div class="flow-row">
+        <div class="flow-box">PDO Buffer &nbsp;|&nbsp; EVENT FIFO &nbsp;|&nbsp; SDO FIFO &nbsp;|&nbsp; HB</div>
+      </div>
+      <div class="flow-down"></div>
+      <div class="flow-row">
+        <div class="flow-box accent3">CAN_TxScheduler（next_tick + Budget 驱动）</div>
+      </div>
+      <div class="flow-down"></div>
+      <div class="flow-row" style="gap:48px">
+        <div class="flow-box">hcan1 邮箱</div>
+        <div class="flow-box">hcan2 邮箱</div>
+      </div>
+      <div class="flow-down"></div>
+      <div class="flow-row" style="gap:48px">
+        <div class="flow-box warn">CAN1 → 电机节点 A/B/C</div>
+        <div class="flow-box warn">CAN2 → 电机节点 D/E/F</div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>对象</th><th>职责</th><th>发送语义</th><th>示例</th></tr></thead>
+        <tbody>
+          <tr><td>PDO</td><td>实时控制</td><td>覆写槽，next_tick 驱动</td><td>位置 / 力矩 / 速度目标</td></tr>
+          <tr><td>TPDO（RX）</td><td>节点状态反馈</td><td>Inhibit Time 限速</td><td>实际位置 / 速度 / 电流</td></tr>
+          <tr><td>SDO</td><td>可靠事务</td><td>FIFO + ACK + 重发，互斥窗口</td><td>参数下发、模式切换</td></tr>
+          <tr><td>Heartbeat</td><td>节点在线监控</td><td>固定低频，低优先级</td><td>100ms 周期，掉线检测</td></tr>
+          <tr><td>SYNC</td><td>触发同步 TPDO</td><td>广播，配合 Inhibit Time</td><td>触发所有节点同步上报</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── S12: 总线录播器 ── -->
+  <section id="s12">
+    <h2 data-n="12">可观测性：总线录播器</h2>
+    <p>现有系统人肉串行发送，大部分时候稳定，偶发不稳定但找不到原因。根本原因是<strong>总线上发生了什么不可见</strong>。最小成本的解决方案：环形 buffer 录播器，出问题时回放时序。</p>
+
+    <h3>12.1 录播器实现</h3>
+    <pre data-lang="C"><code><span class="kw">typedef</span> <span class="kw">struct</span> {
+    <span class="ty">uint32_t</span> tick_us;   <span class="cm">// 微秒时间戳</span>
+    <span class="ty">uint8_t</span>  bus;       <span class="cm">// CAN_BUS_1 / CAN_BUS_2</span>
+    <span class="ty">uint8_t</span>  dir;       <span class="cm">// DIR_TX / DIR_RX</span>
+    <span class="ty">uint32_t</span> id;
+    <span class="ty">uint8_t</span>  dlc;
+    <span class="ty">uint8_t</span>  data[<span class="nu">8</span>];
+    <span class="ty">uint8_t</span>  dropped;   <span class="cm">// 此前是否有丢帧</span>
+} <span class="ty">CanLogEntry</span>;
+
+<span class="pp">#define</span> CAN_LOG_SIZE  <span class="nu">256</span>
+<span class="kw">static</span> <span class="ty">CanLogEntry</span> g_can_log[CAN_LOG_SIZE];
+<span class="kw">static</span> <span class="ty">uint8_t</span>     g_log_idx = <span class="nu">0</span>;
+
+<span class="pp">#define</span> <span class="fn">CAN_LOG</span>(bus, dir, id, dlc, data_ptr)                \
+    <span class="kw">do</span> {                                                        \
+        <span class="ty">CanLogEntry</span> *e = &g_can_log[g_log_idx++ % CAN_LOG_SIZE]; \
+        e->tick_us = <span class="fn">get_tick_us</span>();                            \
+        e->bus = bus; e->dir = dir; e->id = id; e->dlc = dlc;  \
+        <span class="fn">memcpy</span>(e->data, data_ptr, dlc);                          \
+        e->dropped = g_stats[bus].tx_drop_count > <span class="nu">0</span>;           \
+    } <span class="kw">while</span>(<span class="nu">0</span>)</code></pre>
+
+    <h3>12.2 在 TX 和 RX 各插一行</h3>
+    <pre data-lang="C"><code><span class="cm">// TX 侧（邮箱中断搬运时）</span>
+<span class="fn">HAL_CAN_AddTxMessage</span>(hcan, &hdr, frame.data, &mb);
+<span class="fn">CAN_LOG</span>(bus, DIR_TX, frame.id, frame.dlc, frame.data);
+
+<span class="cm">// RX 侧（接收中断）</span>
+<span class="fn">HAL_CAN_GetRxMessage</span>(hcan, CAN_RX_FIFO0, &hdr, data);
+<span class="fn">CAN_LOG</span>(bus, DIR_RX, hdr.StdId, hdr.DLC, data);</code></pre>
+
+    <h3>12.3 出问题时的分析</h3>
+    <p>通过调试器查看 <code>g_can_log</code> 环形 buffer，可以直接看到：</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>观察到的现象</th><th>对应的问题</th></tr></thead>
+        <tbody>
+          <tr><td>TX 帧和 RX 帧 tick_us 高度重叠</td><td>RX 风暴阻塞了 TX 发送窗口</td></tr>
+          <tr><td>某电机连续多帧无 RX 回复</td><td>节点掉线 / 总线错误 / ID 配置错误</td></tr>
+          <tr><td>dropped=1 出现</td><td>队列在该时刻满过，有帧被丢弃</td></tr>
+          <tr><td>TX 帧间隔异常拉长</td><td>邮箱被 RX 处理长时间占用 / 中断优先级问题</td></tr>
+          <tr><td>同一 ID 连续多帧 TX 无间隔</td><td>Budget 未生效 / 覆写槽未正确触发</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-ok">
+      <strong>成本收益</strong>
+      256 条 log，每条约 20 字节，总计 5KB RAM。覆盖最近 256 帧事件，足够定位绝大多数偶发问题。这是整个架构里成本最低、收益最高的单项投资。
+    </div>
+  </section>
+
+  <!-- ── S13: 邮箱中断 while ── -->
+  <section id="s13">
+    <h2 data-n="13">邮箱中断 while 的设计意图</h2>
+    <p>邮箱空中断回调里使用 <code>while</code> 而非 <code>if</code>，原因是一次中断可能对应多个空闲邮箱。</p>
+
+    <h3>13.1 while 不会阻塞的原因</h3>
+    <p>循环有两个退出条件，任意一个满足立即退出，没有任何等待：</p>
+    <pre data-lang="C"><code><span class="kw">while</span> (<span class="fn">HAL_CAN_GetTxMailboxesFreeLevel</span>(hcan) > <span class="nu">0</span>) {
+    <span class="ty">CanTxFrame</span> frame;
+    <span class="kw">if</span> (!<span class="fn">tx_queue_pop</span>(...)) <span class="kw">break</span>;   <span class="cm">// 退出条件1：队列空，立即 break</span>
+    <span class="fn">HAL_CAN_AddTxMessage</span>(...);         <span class="cm">// 寄存器写入，微秒级，不等待</span>
+}                                      <span class="cm">// 退出条件2：FreeLevel==0，条件为假退出</span></code></pre>
+
+    <div class="callout callout-ok">
+      <strong>有界循环</strong>
+      硬件邮箱只有 3 个，FreeLevel 最大返回 3。while 最多执行 3 次，执行时间约几微秒，在 168MHz STM32F405 上完全可以接受。
+    </div>
+
+    <h3>13.2 为什么不用 if</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>写法</th><th>行为</th><th>问题</th></tr></thead>
+        <tbody>
+          <tr><td><code>if (FreeLevel > 0)</code></td><td>每次中断只填 1 帧</td><td class="warn">3 个空邮箱需要 3 次中断才能填满，吞吐量低</td></tr>
+          <tr><td><code>while (FreeLevel > 0)</code></td><td>一次中断填满所有空邮箱</td><td class="ok">吞吐量最大化，队列积压快速消化</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>13.3 需要注意的地方</h3>
+    <div class="callout callout-warn">
+      <strong>FromISR API</strong>
+      如果 <code>tx_queue_pop</code> 内部使用了 FreeRTOS 临界区保护，在中断上下文里必须使用 <code>taskENTER_CRITICAL_FROM_ISR()</code> 而非 <code>taskENTER_CRITICAL()</code>，否则会造成调度器断言失败。
+    </div>
+  </section>
+
+  <!-- ── S14: 定时器中断 ── -->
+  <section id="s14">
+    <h2 data-n="14">定时器中断的作用</h2>
+    <p><code>TIM_PeriodElapsedCallback</code> 是 STM32 通用定时器的<strong>溢出中断回调</strong>。定时器计数器从 0 计数到 ARR 设定值后溢出，触发一次中断，然后自动复位重新计数。</p>
+
+    <pre data-lang="text"><code>计数器：0 → 1 → 2 → ... → ARR → 溢出 → 中断 → 复位为0 → 继续
+                                          ↓
+                             TIM_PeriodElapsedCallback()
+                                          ↓
+                             bus_budget_refresh()   重置本ms配额
+                                          ↓
+                             CAN_Scheduler_Tick()   检查所有 next_tick</code></pre>
+
+    <h3>14.1 为什么不用 HAL_GetTick() 轮询</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>对比项</th><th>主循环 HAL_GetTick() 轮询</th><th>定时器中断</th></tr></thead>
+        <tbody>
+          <tr><td>触发精度</td><td class="warn">取决于主循环负载，可能 ±几ms</td><td class="ok">硬件保证，μs 级精度</td></tr>
+          <tr><td>500Hz 控制周期抖动</td><td class="warn">负载重时抖动明显</td><td class="ok">可忽略</td></tr>
+          <tr><td>与业务代码耦合</td><td class="warn">强耦合，主循环卡住调度停止</td><td class="ok">完全解耦</td></tr>
+          <tr><td>实现复杂度</td><td class="ok">简单</td><td>需配置定时器</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>14.2 配置示例</h3>
+    <pre data-lang="C"><code><span class="cm">// 168MHz 主频，定时器时钟 84MHz</span>
+<span class="cm">// PSC=83, ARR=999 → 周期 = (83+1)×(999+1)/84MHz = 1ms</span>
+htim_can_sched.Instance           = TIM3;
+htim_can_sched.Init.Prescaler     = <span class="nu">83</span>;
+htim_can_sched.Init.Period        = <span class="nu">999</span>;
+htim_can_sched.Init.CounterMode   = TIM_COUNTERMODE_UP;
+<span class="fn">HAL_TIM_Base_Init</span>(&htim_can_sched);
+<span class="fn">HAL_TIM_Base_Start_IT</span>(&htim_can_sched);  <span class="cm">// 启动并开启中断</span>
+
+<span class="cm">// 需要更高精度时：ARR=499 → 500μs 节拍（2kHz）</span>
+<span class="cm">// Phase Shift 精度随之提升</span></code></pre>
+  </section>
+
+  <!-- ── S15: TPDO 对发送的影响 ── -->
+  <section id="s15">
+    <h2 data-n="15">TPDO 对发送的影响</h2>
+    <p>TPDO 反馈帧不会导致主控发送失败，但会造成发送延迟。理解这个区别对系统调优非常重要。</p>
+
+    <h3>15.1 CAN 仲裁机制保证不丢失</h3>
+    <p>主控发送 PDO 与电机 TPDO 同时竞争总线时，CAN 硬件按 ID 数值大小自动仲裁，ID 小的先发，ID 大的自动退让并等待重试：</p>
+    <pre data-lang="text"><code>主控 PDO   ID=0x200  ──┐
+                        ├─ 仲裁 → ID小的先发，另一个硬件自动重试
+电机 TPDO  ID=0x180  ──┘         两帧都不丢失</code></pre>
+
+    <div class="callout callout-ok">
+      <strong>退让帧硬件自动重发</strong>
+      仲裁失败的帧由 CAN 控制器硬件自动重发，对软件完全透明，不需要任何处理。
+    </div>
+
+    <h3>15.2 TPDO 造成的发送延迟</h3>
+    <pre data-lang="text"><code>主控想在 t=0 发 PDO
+t=0:    TPDO 正在总线上，主控 PDO 退让等待
+t=130:  TPDO 发完，主控 PDO 开始发送
+→ 延迟 130μs（一帧时间）</code></pre>
+
+    <p>TPDO 风暴时的最坏情况：</p>
+    <pre data-lang="text"><code>发出 SYNC 帧
+↓
+6个电机 × 3个TPDO = 18帧同时竞争总线
+↓
+主控下一条 PDO：等待 18 × 130μs = 2340μs ≈ 2.3ms
+↓
+控制周期 2ms → 整整一个周期的指令被延迟</code></pre>
+
+    <h3>15.3 TDMA 时间片与 TPDO 的关系</h3>
+    <div class="callout callout-warn">
+      <strong>澄清：时间片无法控制 RX 回来的时机</strong>
+      TDMA 时间片只管 TX 发送时刻，TPDO 回复时机由电机节点固件决定，主控无法控制。所谓"TX 与 RX 对齐同一时间片"是不准确的说法——实际上 TPDO 可能在任意时刻回来，由 CAN 硬件仲裁自动处理。
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>场景</th><th>结果</th></tr></thead>
+        <tbody>
+          <tr><td>主控 TX 与单个 TPDO 竞争</td><td class="ok">ID 小的先发，另一个等待重发，无损失，延迟约 130μs</td></tr>
+          <tr><td>TPDO 风暴（多帧同时竞争）</td><td class="warn">TX 被延迟最多几毫秒，不丢失，影响控制周期</td></tr>
+          <tr><td>NART 模式开启</td><td class="bad">仲裁失败直接丢帧，不要对控制帧开启</td></tr>
+          <tr><td>总线错误（Bus-Off）</td><td class="bad">所有发送停止，需要恢复机制</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── S16: 自动重传与故障隔离 ── -->
+  <section id="s16">
+    <h2 data-n="16">自动重传风险与故障隔离</h2>
+
+    <h3>16.1 自动重传拖垮控制器的场景</h3>
+    <div class="callout callout-danger">
+      <strong>风险链条</strong>
+      电机掉线 / 总线断路 → 无节点回复 ACK → 发送失败 → 自动重传 → 再失败 → 再重传 → 邮箱永久占用 → 后续帧全部阻塞 → TEC 溢出 → Bus-Off → 整条总线失联
+    </div>
+
+    <h3>16.2 Bus-Off 触发机制</h3>
+    <pre data-lang="text"><code>TEC（发送错误计数）：每次发送失败 +8，每次成功 -1
+REC（接收错误计数）：类似机制
+
+TEC > 127：Error Passive（被动错误，影响减小）
+TEC > 255：Bus-Off，控制器完全停止收发</code></pre>
+
+    <h3>16.3 CAN 总线能检测什么，不能检测什么</h3>
+    <div class="callout callout-warn">
+      <strong>重要认知</strong>
+      CAN 硬件检测的是总线电气层错误，无法区分"目标节点掉线"和"发送成功"——因为其他节点会代替掉线节点回复 ACK，硬件层面发送永远"成功"。单节点掉线只能由应用层软件检测。
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>故障类型</th><th>谁检测</th><th>检测方式</th></tr></thead>
+        <tbody>
+          <tr><td>总线断路 / 短路</td><td>CAN 硬件</td><td>ACK 错误 → TEC 增加 → Bus-Off</td></tr>
+          <tr><td>节点持续发错误帧</td><td>CAN 硬件</td><td>该节点 TEC 溢出 → 自动 Bus-Off 隔离，不拖垮其他节点</td></tr>
+          <tr><td>单节点静默掉线</td><td class="warn">应用层软件</td><td>RX 超时检测 / Heartbeat 丢失</td></tr>
+          <tr><td>节点回复数据异常</td><td class="warn">应用层软件</td><td>数据校验 / 状态值范围检查</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>16.4 推荐配置策略</h3>
+    <pre data-lang="C"><code><span class="cm">// PDO 控制帧：关闭自动重传（NART）</span>
+<span class="cm">// 丢一帧没关系，下帧覆写槽会覆盖，与 PDO 语义完全一致</span>
+hcan.Init.AutoRetransmission = DISABLE;
+
+<span class="cm">// Bus-Off 硬件自动恢复</span>
+<span class="cm">// 等待 128×11 个隐性位（约1.4ms @1Mbps）后自动重新加入总线</span>
+hcan.Init.AutoBusOff = ENABLE;</code></pre>
+
+    <h3>16.5 邮箱超时看门狗</h3>
+    <p>即使开启 NART，也应加软件看门狗作为兜底，防止极端情况下邮箱卡死：</p>
+    <pre data-lang="C"><code><span class="kw">void</span> <span class="fn">CAN_TxWatchdog</span>(<span class="ty">CanBusId</span> bus) {
+    <span class="ty">uint32_t</span> now = <span class="fn">get_tick_ms</span>();
+    <span class="kw">for</span> (<span class="ty">uint8_t</span> mb = <span class="nu">0</span>; mb < <span class="nu">3</span>; mb++) {
+        <span class="kw">if</span> (!mailbox_pending[bus][mb]) <span class="kw">continue</span>;
+        <span class="kw">if</span> (now - mailbox_send_tick[bus][mb] > TX_TIMEOUT_MS) {
+            <span class="fn">HAL_CAN_AbortTxRequest</span>(s_can_hdl[bus], <span class="nu">1</span> << mb);
+            g_stats[bus].tx_timeout_count++;
+            <span class="fn">log_warn</span>(<span class="st">"CAN%d mailbox%d timeout, aborted"</span>, bus, mb);
+        }
+    }
+}
+<span class="cm">// 在 1ms 定时器中断或主循环里周期调用</span></code></pre>
+
+    <h3>16.6 单节点掉线软件检测</h3>
+    <pre data-lang="C"><code><span class="cm">// 方法一：RX 超时（适合有 TPDO 反馈的电机）</span>
+<span class="kw">void</span> <span class="fn">motor_health_check</span>(<span class="ty">MotorDevice</span> *m) {
+    <span class="kw">if</span> (<span class="fn">get_tick_ms</span>() - m->last_rx_tick > RX_TIMEOUT_MS) {
+        m->state = MOTOR_FAULT_OFFLINE;
+        <span class="fn">log_warn</span>(<span class="st">"Motor 0x%03X offline"</span>, m->node_id);
+    }
+}
+
+<span class="cm">// 方法二：Heartbeat 监控（CANopen 标准方式）</span>
+<span class="cm">// 电机每 100ms 发一帧心跳，主控监控间隔</span>
+<span class="kw">if</span> (<span class="fn">get_tick_ms</span>() - m->last_heartbeat_tick > <span class="nu">200</span>) {
+    m->state = MOTOR_FAULT_OFFLINE;
+}</code></pre>
+
+    <h3>16.7 分层故障隔离</h3>
+    <pre data-lang="text"><code>单节点掉线（静默）
+    ↓
+应用层：RX 超时 / Heartbeat 丢失 → 标记 MOTOR_FAULT_OFFLINE
+    ↓
+步态层：该电机 FAULT → 切换步态 / 降级运行
+
+节点持续发错误帧
+    ↓
+CAN 硬件：该节点 TEC 溢出 → 自动 Bus-Off 隔离
+    ↓
+其他节点和主控不受影响，继续正常通信
+
+整条总线故障
+    ↓
+Bus-Off 触发 → AutoBusOff 硬件恢复
+    ↓
+软件：检测 Bus-Off 事件 → 记录日志 → 重新初始化 → 上报系统故障
+    ↓
+每一层只处理自己能处理的，超出范围往上抛</code></pre>
+  </section>
+
+  <!-- ── S17: 实现路线图 ── -->
+  <section id="s17">
+    <h2 data-n="17">实现路线图</h2>
+    <p>面向二十几个机器人项目的通用框架，按阶段实现，避免一次性过度设计。</p>
+
+    <h3>阶段一：基础层（现在必须有）</h3>
+    <div class="callout callout-ok">
+      <strong>目标：消除偶发不稳定，建立可观测性</strong>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>组件</th><th>理由</th></tr></thead>
+        <tbody>
+          <tr><td>PDO 覆写槽</td><td>控制帧不积压，最重要的正确性保证</td></tr>
+          <tr><td>双总线 bus_id</td><td>电机与总线解耦，切换零成本</td></tr>
+          <tr><td>邮箱空中断驱动</td><td>不轮询，不阻塞</td></tr>
+          <tr><td>总线录播器</td><td>5KB RAM，偶发问题直接可见</td></tr>
+          <tr><td>TX 丢帧计数</td><td>最基本的可观测指标</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>阶段二：调度层（遇到问题再加）</h3>
+    <div class="callout callout-warn">
+      <strong>触发条件：出现优先级饿死 / 周期抖动 / 总线负载超 70%</strong>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>组件</th><th>触发时机</th></tr></thead>
+        <tbody>
+          <tr><td>Bus Budget</td><td>Heartbeat 或 SDO 出现饿死现象</td></tr>
+          <tr><td>定时器中断触发调度</td><td>控制周期抖动超过 ±0.5ms</td></tr>
+          <tr><td>全双工负载统计</td><td>需要量化总线压力时</td></tr>
+          <tr><td>Inhibit Time 配置</td><td>发现 TPDO 风暴阻塞 TX</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>阶段三：通用框架（新项目从零构建）</h3>
+    <div class="callout callout-info">
+      <strong>目标：不同机器人只写动作逻辑，总线层和驱动层复用</strong>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>层级</th><th>内容</th><th>复用程度</th></tr></thead>
+        <tbody>
+          <tr><td>CAN 总线层</td><td>本文档全部内容</td><td class="ok">100% 复用，不改动</td></tr>
+          <tr><td>协议驱动层</td><td>MIT / CiA402 / ZeroErr / Damiao / KTECH 各一个驱动文件</td><td class="ok">按需选用，不修改</td></tr>
+          <tr><td>电机抽象层</td><td>统一 FSM（IDLE→ENABLE→RUN→FAULT）+ 统一接口（set_pos / set_vel）</td><td class="ok">100% 复用</td></tr>
+          <tr><td>应用层</td><td>动作编排 / 步态 / 轨迹</td><td class="warn">每个机器人单独写，只操作电机对象</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>阶段四：按需引入</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>组件</th><th>触发条件</th></tr></thead>
+        <tbody>
+          <tr><td>TDMA 时间片</td><td>活跃电机数固定且需要硬实时延迟保证</td></tr>
+          <tr><td>动态活跃集合</td><td>电机数量超过 Budget 方案的承载上限</td></tr>
+          <tr><td>Bus-Off 自动恢复</td><td>在嘈杂电气环境中出现总线错误</td></tr>
+          <tr><td>CANopen NMT 状态机</td><td>需要标准协议互操作性</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── S18: 原则总结 ── -->
+  <section id="s18">
+    <h2 data-n="18">工程原则总结</h2>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 01</div>
+        <div class="card-title">中断只搬运</div>
+        <div class="card-body">邮箱空中断不决定发什么，只从队列取帧填充邮箱。调度策略全部在 Scheduler 里。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 02</div>
+        <div class="card-title">应用层不碰 HAL</div>
+        <div class="card-body">业务代码只调用 pdo_update() 或 can_tx_enqueue()，不直接调用 HAL_CAN_AddTxMessage。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 03</div>
+        <div class="card-title">帧携带 bus_id</div>
+        <div class="card-body">消息帧自描述走哪条总线。电机只持有 bus_id，切换总线只改一个字段，发送路径零修改。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 04</div>
+        <div class="card-title">控制帧不排队</div>
+        <div class="card-body">PDO 使用覆写槽，旧控制值被新值隐式丢弃，不在队列积压产生控制滞后。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 05</div>
+        <div class="card-title">全双工负载建模</div>
+        <div class="card-body">TX 和 RX 共享同一 bit 统计器。只统计 TX 会低估真实负载，TPDO 风暴是主要 RX 拥塞源。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 06</div>
+        <div class="card-title">非实时消息必须可降级</div>
+        <div class="card-body">Bus Budget 在高负载时压缩 PDO 配额，为 Heartbeat / SDO 保留带宽，防止饿死。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 07</div>
+        <div class="card-title">next_tick 驱动，Budget 保护</div>
+        <div class="card-body">调度驱动力是每个电机自己的 next_tick，Budget 只是上限保护，不是"凑满配额去找电机发"。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 08</div>
+        <div class="card-title">RX 反馈需要治理</div>
+        <div class="card-body">Inhibit Time 错开 TPDO 上报时刻；位置高频，电流低频；按需 SDO 查询诊断数据，不主动上报。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 09</div>
+        <div class="card-title">不重复可靠层</div>
+        <div class="card-body">已有 FSM 管理事务确认的设备（ZeroErr PP）不再叠加 SDO 重发层，避免双重重试冲突。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 10</div>
+        <div class="card-title">先观测再优化</div>
+        <div class="card-body">录播器是成本最低收益最高的投资。偶发问题先看日志，确认根因后再加机制，不盲目复杂化。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 11</div>
+        <div class="card-title">TDMA 按需引入</div>
+        <div class="card-body">电机数量固定且需要硬实时时用 TDMA；电机数量动态变化时 Budget 限流更稳定。两者可混用。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 12</div>
+        <div class="card-title">PDO 关闭自动重传</div>
+        <div class="card-body">控制帧开启 NART：丢一帧下帧覆盖，与覆写槽语义一致。防止单节点故障导致邮箱卡死拖垮整条总线。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 13</div>
+        <div class="card-title">单节点掉线靠软件检测</div>
+        <div class="card-body">CAN 硬件无法检测单节点静默掉线——其他节点会代为回复 ACK。必须用 RX 超时或 Heartbeat 丢失在应用层检测。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 14</div>
+        <div class="card-title">分层故障隔离</div>
+        <div class="card-body">单节点故障由应用层处理，不传播到总线；总线故障由 AutoBusOff 恢复，不传播到系统崩溃。每层只处理自己能处理的。</div>
+      </div>
+      <div class="card">
+        <div class="card-num">PRINCIPLE · 15</div>
+        <div class="card-title">扩展不改接口</div>
+        <div class="card-body">增加 CAN3 只需扩展枚举和句柄数组；增加电机协议只需新增驱动文件；应用层只操作电机对象。</div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="doc-footer">
+    <span>STM32 CAN 总线控制架构技术文档 · v5.0</span>
+    <span>v1~v4 架构演进 → v5.0 实现细节 + 故障隔离 + 分层健壮性</span>
+  </footer>
+
+</div>
+
+<script>
+  // progress bar
+  const prog = document.getElementById('prog');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    const pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+    prog.style.width = pct + '%';
+  });
+</script>
+</body>
+</html>
