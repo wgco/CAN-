@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STM32 + CAN 分布式机器人控制架构技术文档</title>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --container-bg: #161b22;
+            --accent-color: #58a6ff;
+            --accent-hover: #1f6feb;
+            --text-main: #c9d1d9;
+            --text-muted: #8b949e;
+            --border-color: #30363d;
+            --code-bg: #010409;
+            --keyword-color: #ff7b72;
+            --type-color: #79c0ff;
+            --comment-color: #8b949e;
+            --string-color: #a5d6ff;
+            --table-header: rgba(56, 139, 253, 0.15);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+            margin: 0;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1040px;
+            margin: 0 auto;
+            background-color: var(--container-bg);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+            border: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            color: #ffffff;
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 16px;
+            margin-top: 0;
+            text-align: center;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            text-align: center;
+            margin-top: -10px;
+            margin-bottom: 40px;
+            font-family: "Fira Code", Consolas, monospace;
+        }
+
+        h2 {
+            font-size: 1.6rem;
+            color: #ffffff;
+            margin-top: 40px;
+            border-left: 5px solid var(--accent-color);
+            padding-left: 14px;
+            padding-bottom: 2px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h3 {
+            font-size: 1.25rem;
+            color: #f0f6fc;
+            margin-top: 24px;
+        }
+
+        p, ul, ol {
+            color: var(--text-main);
+            font-size: 1rem;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        strong {
+            color: #ffffff;
+        }
+
+        .diagram {
+            font-family: "Fira Code", "Courier New", Courier, monospace;
+            background-color: var(--code-bg);
+            color: #7ee787;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            white-space: pre;
+            overflow-x: auto;
+            margin: 20px 0;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        .blockquote {
+            background: rgba(88, 166, 255, 0.07);
+            border-left: 4px solid var(--accent-color);
+            padding: 16px 20px;
+            margin: 24px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .blockquote p {
+            margin: 0;
+            color: #e6edf3;
+            font-style: italic;
+        }
+
+        pre {
+            background-color: var(--code-bg);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+
+        code {
+            font-family: "Fira Code", Consolas, Monaco, monospace;
+            font-size: 0.88rem;
+        }
+
+        .keyword { color: var(--keyword-color); font-weight: bold; }
+        .type { color: var(--type-color); }
+        .comment { color: var(--comment-color); font-style: italic; }
+        .string { color: var(--string-color); }
+        .number { color: #d2a8ff; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 24px 0;
+            font-size: 0.95rem;
+        }
+
+        th, td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: var(--table-header);
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>STM32 + CAN 分布式机器人控制架构技术文档</h1>
+    <div class="subtitle">Bus RTOS / CANopen-like / CiA402 / PDO实时调度工程设计</div>
+    
+    <h2>1. 文档目标</h2>
+    <p>本文档旨在阐述如何从基本的 STM32 CAN 通信底层出发，升级构建一套面向高动态机器人（如四足步态机器人、多自由度协作臂）的<b>分布式总线控制系统</b>。核心目标不是实现简单的“能发 CAN 报文”，而是实现具备总线负载可观测性、抗拥塞调度和实时控制数据确定性的 <b>Bus RTOS 实时总线调度系统</b>。</p>
+
+    <h2>2. 核心认知：总线即共享实时资源</h2>
+    <p>在机器人级控制总线设计中，必须树立核心认知：<b>CAN 绝不是一个简单的通信接口，而是一种稀缺的、共享的实时物理资源。</b></p>
+    <div class="blockquote">
+        <p><b>等价交换律：</b>CPU 调度算力本质是分配“时间片”；CAN 总线调度带宽本质是分配“Bit 时间”。</p>
+    </div>
+    <p>任何一个分布式节点发送非必要报文，都在掠夺和占用总线的绝对时间资源。因此，总线上的流量必须同 CPU 线程一样，接受严格的<b>调度（Scheduling）、限流（Rate Limiting）、监控（Monitoring）与降级（Degradation）</b>，否则物理总线必然陷入不可控状态。</p>
+
+    <h2>3. 基础架构拓扑</h2>
+    <p>系统采用数据流向与调度边界解耦的四层软件拓扑架构：</p>
+    <div class="diagram">
+                        应用层 (步态规划 / 轨迹插补 / 核心状态机)
+                                      │
+                                      ▼
+                             Command Aggregator (命令汇聚器)
+                                      │
+                                      ▼
+                             CAN Scheduler (总线调度器内核)
+                                      │
+               ┌──────────────────────┴──────────────────────┐
+               ▼                                             ▼
+     ┌──────────────────┐                          ┌──────────────────┐
+     │  PDO Buffer      │                          │    FIFO Queues   │
+     │ (实时覆盖型缓冲区)│                          │ (突发/事务型消息) │
+     └──────────────────┘                          └──────────────────┘
+               │                                             │
+               └──────────────────────┬──────────────────────┘
+                                      ▼
+                        bxCAN / FDCAN 硬件发送邮箱 (Mailboxes)
+                                      │
+                                      ▼
+                         CAN BUS 物理总线 (1 Mbps 差分网络)</div>
+
+    <h2>4. 为什么不能采用单一发送 FIFO Queue</h2>
+    <p>初学者和低端系统常将所有待发数据（控制帧、诊断帧、心跳、配置）统一压入一个软件 FIFO 队列。在总线通畅时该方案能正常工作，但在多轴联动或电磁干扰下，该设计会导致控制延迟的灾难性累积。</p>
+    <p>假设控制环周期为 1ms，主控连续下发物理 ID 为 100、110、120、130 的控制指令。一旦总线发生瞬时物理仲裁碰撞或突发单帧错误重发，这些消息在单一 FIFO 内便会形成无差别积压：</p>
+    <div class="diagram">
+[ 软件单一FIFO队列积压流 ]
+进入队尾: 100(t=0ms) ──> 110(t=1ms) ──> 120(t=2ms) ──> 130(t=3ms)
+总线恢复后依次弹出: 发送 100(旧) ──> 发送 110(旧) ──> 发送 120(旧) ──> 发送 130(最新)</div>
+    <p>物理总线恢复正常后，系统继续顽固地发送已失去时效性的历史控制指令，导致最新的控制命令（130）排在队尾被迫等待。这种控制延迟的阶跃累积反应在机器人肢体上，表现为<b>关节剧烈抖动、电机高频抽动、闭环稳定性（Phase Margin）严重降级</b>。</p>
+
+    <h2>5. PDO 与 FIFO 的工程解耦关系</h2>
+    <p>本架构中，实时过程数据（PDO）与异步事务事务数据（FIFO）并非替代关系，而是共存与协同关系。实时命令不入排队 FIFO，而是采用<b>覆盖型 Buffer</b>；事务消息则利用不同级别的 FIFO 进行缓冲。</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>特性维度</th>
+                <th>实时过程数据缓冲 (PDO Buffer)</th>
+                <th>事务/异步消息队列 (FIFO Queue)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><b>数据承载关系</b></td>
+                <td>严格的<b>覆盖关系</b> (Overwrite)</td>
+                <td>严格的<b>累加关系</b> (Append)</td>
+            </tr>
+            <tr>
+                <td><b>历史数据保留</b></td>
+                <td>否。新控制量直接覆盖并抹除历史未发值</td>
+                <td>是。队列中的每一帧事务消息均需被保留送达</td>
+            </tr>
+            <tr>
+                <td><b>底层写入行为</b></td>
+                <td>新数据直接原地刷新物理内存空间</td>
+                <td>新数据写入队尾，旧数据留存在队头等待弹出</td>
+            </tr>
+            <tr>
+                <td><b>典型应用场景</b></td>
+                <td>电机目标位置、目标转矩、实际传感器反馈</td>
+                <td>SDO配置、Event突发告警、Heartbeat保活帧</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>6. PDO 核心原则：实时且不可排队</h2>
+    <p><b>“控制帧绝不排队”</b>是本系统的核心铁律。控制层只确保总线发送的是<b>当前系统计算出的最新切片值</b>。以下是该机制的纯 C 语言工程无锁/半原子操作原型实现：</p>
+
+    <pre><code><span class="keyword">#include</span> <span class="string">&lt;stdint.h&gt;</span>
+<span class="keyword">#include</span> <span class="string">&lt;string.h&gt;</span>
+
+<span class="comment">/**
+ * @brief 实时过程数据(PDO)覆盖型缓冲区结构体
+ */</span>
+<span class="keyword">typedef struct</span> {
+    <span class="type">uint32_t</span> cob_id;          <span class="comment">// CAN 对象的通信对象标识符</span>
+    <span class="type">uint8_t</span>  data[<span class="number">8</span>];         <span class="comment">// 原始 Payload 数据空间</span>
+    <span class="type">uint8_t</span>  dlc;             <span class="comment">// 数据长度</span>
+    <span class="keyword">volatile</span> <span class="type">uint8_t</span> updated; <span class="comment">// 原子更新标志位</span>
+} <span class="type">PDO_Buffer_t</span>;
+
+<span class="keyword">static</span> <span class="type">PDO_Buffer_t</span> s_tx_pdo_buffer[<span class="number">16</span>]; <span class="comment">// 映射多轴电机的 PDO 缓冲表</span>
+
+<span class="comment">/**
+ * @brief 应用层高频计算线程：写入最新控制指令（全覆盖）
+ */</span>
+<span class="keyword">void</span> <span class="type">BusRTOS_Write_PDO</span>(<span class="type">uint8_t</span> node_index, <span class="type">uint32_t</span> cob_id, <span class="keyword">const</span> <span class="type">uint8_t</span>* p_cmd, <span class="type">uint8_t</span> dlc) {
+    s_tx_pdo_buffer[node_index].cob_id = cob_id;
+    <span class="comment">// 覆盖写入最新的内存数据，历史未发出的数据在此处被合法抛弃</span>
+    memcpy((<span class="keyword">void</span>*)s_tx_pdo_buffer[node_index].data, (<span class="keyword">const</span> <span class="keyword">void</span>*)p_cmd, dlc);
+    s_tx_pdo_buffer[node_index].dlc = dlc;
+    s_tx_pdo_buffer[node_index].updated = <span class="number">1</span>; <span class="comment">// 置位更新标志</span>
+}</code></pre>
+
+    <h2>7. 优先级倒置与饥饿问题 (Priority Starvation)</h2>
+    <p>如果调度器无脑优先发送 PDO 消息（例如：<code>if (has_pdo) send_pdo(); else if (has_sdo) send_sdo();</code>），由于机器人在作业时 PDO 往往以 1ms 的频率持续占满通道，这会导致总线发生<b>优先级饥饿（Priority Starvation）</b>。处于更低优先级的异步事务（如状态监控 Heartbeat、在线参数调整 SDO、Event 突发异常告警）将无法获得总线控制权而被完全“饿死”，导致系统监控层发生伪断线报警。</p>
+
+    <h2>8. 引入总线时间预算机制 (Bus Budget)</h2>
+    <p>为了解决饥饿问题，系统引入<b>总线预算机制（Bus Budget Allocation）</b>。在 1 Mbps 的标准工业波特率下，底层物理帧的理论时间消耗可通过如下数学公式精确推导：</p>
+    <div class="blockquote">
+        <p><b>CAN标准帧物理时间计算：</b><br>
+        $T_{\text{frame}} = \frac{34 + 8 \times \text{DLC} + \text{StuffingBits}}{1,000,000\text{ bps}}$<br>
+        一帧标准数据帧（DLC = 8）包含位填充后大约消耗 <b>130 bits</b>。在 1ms 的控制周期内，总线最大可容纳物理极限为：$1000\,\mu\text{s} / 130\,\mu\text{s} \approx \mathbf{7.69}$ 帧报文。
+        </p>
+    </div>
+    <p>为确保总线利用率维持在安全线以下，每个 1ms 时间预算周期分配如下：</p>
+    <pre><code><span class="keyword">typedef struct</span> {
+    <span class="type">uint8_t</span> pdo_budget;   <span class="comment">// 过程数据帧预算（控制指令）</span>
+    <span class="type">uint8_t</span> event_budget; <span class="comment">// 突发告警帧预算</span>
+    <span class="type">uint8_t</span> sdo_budget;   <span class="comment">// 配置事务帧预算</span>
+    <span class="type">uint8_t</span> hb_budget;    <span class="comment">// 心跳保活帧预算</span>
+} <span class="type">Bus_Budget_t</span>;
+
+<span class="comment">// 1ms 周期内的硬性安全时间预算表分配：共 7 帧</span>
+<span class="keyword">static</span> <span class="keyword">const</span> <span class="type">Bus_Budget_t</span> c_safe_budget = {
+    .pdo_budget   = <span class="number">4</span>,    <span class="comment">// 4 * 130us = 520us (主控制带宽)</span>
+    .event_budget = <span class="number">1</span>,    <span class="comment">// 1 * 130us = 130us</span>
+    .sdo_budget   = <span class="number">1</span>,    <span class="comment">// 1 * 130us = 130us</span>
+    .hb_budget    = <span class="number">1</span>     <span class="comment">// 1 * 130us = 130us （总占用时间 910us < 1000us）</span>
+};</code></pre>
+
+    <h2>9. 总线调度器（CAN Scheduler）核心实现</h2>
+    <p>以下是具备时间预算限制和限流保护的 <code>CAN_Scheduler</code> 核心调度引擎源码：</p>
+
+    <pre><code><span class="keyword">void</span> <span class="type">BusRTOS_CAN_Scheduler</span>(<span class="keyword">void</span>) {
+    <span class="keyword">static</span> <span class="type">Bus_Budget_t</span> active_budget;
+    <span class="keyword">static</span> <span class="type">uint32_t</span> last_tick = <span class="number">0</span>;
+    
+    <span class="type">uint32_t</span> current_tick = Get_System_Tick_MS();
+    <span class="keyword">if</span> (current_tick != last_tick) {
+        <span class="comment">// 核心：每到新的 1ms 边界，强行重置刷新发送配额，重振总线生命力</span>
+        active_budget = c_safe_budget;
+        last_tick = current_tick;
+    }
+
+    <span class="comment">/* 1. 优先调度实时过程数据 (PDO) */</span>
+    <span class="keyword">if</span> (active_budget.pdo_budget &gt; <span class="number">0</span>) {
+        <span class="keyword">for</span> (<span class="keyword">int</span> i = <span class="string">0</span>; i &lt; <span class="number">16</span>; i++) {
+            <span class="keyword">if</span> (s_tx_pdo_buffer[i].updated) {
+                <span class="keyword">if</span> (HAL_CAN_Transmit_To_Hardware(&amp;s_tx_pdo_buffer[i])) {
+                    s_tx_pdo_buffer[i].updated = <span class="number">0</span>;
+                    active_budget.pdo_budget--;
+                    <span class="keyword">return</span>; <span class="comment">// 轮询投递单帧后退出，保护硬件邮箱不发生突发溢出</span>
+                }
+            }
+        }
+    }
+
+    <span class="comment">/* 2. 在配额限制下，异步调度排队型事务 FIFO */</span>
+    <span class="keyword">if</span> (active_budget.event_budget &gt; <span class="number">0</span> &amp;&amp; !Is_FIFO_Empty(&amp;g_event_fifo)) {
+        <span class="type">CAN_MSG_t</span> msg = Pop_From_FIFO(&amp;g_event_fifo);
+        <span class="keyword">if</span> (HAL_CAN_Transmit_Raw(&amp;msg)) {
+            active_budget.event_budget--;
+            <span class="keyword">return</span>;
+        }
+    }
+
+    <span class="keyword">if</span> (active_budget.sdo_budget &gt; <span class="number">0</span> &amp;&amp; !Is_FIFO_Empty(&amp;g_sdo_fifo)) {
+        <span class="type">CAN_MSG_t</span> msg = Pop_From_FIFO(&amp;g_sdo_fifo);
+        <span class="keyword">if</span> (HAL_CAN_Transmit_Raw(&amp;msg)) {
+            active_budget.sdo_budget--;
+            <span class="keyword">return</span>;
+        }
+    }
+
+    <span class="keyword">if</span> (active_budget.hb_budget &gt; <span class="number">0</span> &amp;&amp; !Is_FIFO_Empty(&amp;g_hb_fifo)) {
+        <span class="type">CAN_MSG_t</span> msg = Pop_From_FIFO(&amp;g_hb_fifo);
+        <span class="keyword">if</span> (HAL_CAN_Transmit_Raw(&amp;msg)) {
+            active_budget.hb_budget--;
+            <span class="keyword">return</span>;
+        }
+    }
+}</code></pre>
+
+    <h2>10. 为什么需要总线负载可观测性</h2>
+    <p>传统的 STM32 bxCAN 物理控制器只会向应用层上报 `TXOK`（发送完成）或硬件报错（如 `Bus-Off`、`Passive Error`）。它<b>完全是盲目的</b>，不会主动提供当前物理网络的带宽拥堵率和实时压力情况。因此，架构层必须通过软件算法显式计算出<b>实时总线负载（Real-time Bus Load）</b>。</p>
+
+    <h2>11. 负载（Bus Load）的工业级工程定义</h2>
+    <p>在实时工业通信体系中，总线负载的科学定义绝对不是<b>“当前发送帧数占总允许帧数的比例”</b>。因为网络中可能穿插混杂着 DLC 从 0 到 8 不等长度的复杂报文，短帧与长帧占用物理铜线的时间大不相同。</p>
+    <div class="blockquote">
+        <p><b>正统定义：</b>总线负载 $\equiv$ 物理总线被显性差分电平占用的绝对时间 / 统计总窗口时间。</p>
+    </div>
+
+    <h2>12. 基于 Bit 时间占用率的数学推导</h2>
+    <p>以 1 Mbps 波特率为例，1 bit 的物理传输持续时间正好等于 <b>$1\,\mu\text{s}$</b>。一帧携带 8 字节数据的标准 CAN 帧，其包含了 11 位标识符、控制位、CRC校验、ACK段以及极端情况下的位填充（Bit Stuffing），经验物理总长度约为 <b>130 bits</b>，即占用总线时间 <b>$130\,\mu\text{s}$</b>。</p>
+    <p>如果在 1ms 的观察窗口内，总线成功发送或监听到了 5 帧完整长帧，则累计占用总线时间为：$5 \times 130\,\mu\text{s} = 650\,\mu\text{s}$。当前周期的负载率为：</p>
+    <p style="text-align: center; font-weight: bold; font-size: 1.1rem; color: var(--accent-color);">
+        Bus Load = 650 &mu;s / 1000 &mu;s = 65.0%
+    </p>
+
+    <h2>13. STM32 物理层负载统计监控实现</h2>
+    <p>为消除频繁浮点运算，系统在硬件层采用<b>滑动窗口积分累加法</b>（Window Accumulation）实现负载统计：</p>
+    <pre><code><span class="keyword">typedef struct</span> {
+    <span class="keyword">volatile</span> <span class="type">uint32_t</span> used_bits_accumulator; <span class="comment">// 窗口内消耗的物理 bit 累加器</span>
+    <span class="keyword">volatile</span> <span class="type">uint8_t</span>  current_bus_load_pct;  <span class="comment">// 转换后的百分比负载率 (0 - 100%)</span>
+} <span class="type">Bus_Monitor_t</span>;
+
+<span class="keyword">static</span> <span class="type">Bus_Monitor_t</span> g_bus_monitor = {<span class="number">0</span>};
+
+<span class="comment">/**
+ * @brief 核心要素8 & 要素9：底层 bxCAN / FDCAN 发送完成及接收中断的轻量级监控打标
+ * @note 必须在每次硬件中断安全写入，单次开销 < 5 个 CPU 周期
+ */</span>
+<span class="keyword">inline</span> <span class="keyword">void</span> <span class="type">BusRTOS_Log_Frame_To_Monitor</span>(<span class="type">uint8_t</span> dlc) {
+    <span class="comment">// 快速近似物理特征方程：时间开销转化公式 bits = 34 + (8 * dlc) + 估计填充位</span>
+    <span class="type">uint32_t</span> bits_spent = <span class="number">34</span> + (dlc &lt;&lt; <span class="number">3</span>) + <span class="number">12</span>; 
+    g_bus_monitor.used_bits_accumulator += bits_spent;
+}
+
+<span class="comment">/**
+ * @brief 核心要素7：在 10ms 滑动窗口定时器中执行无浮点负载解算
+ */</span>
+<span class="keyword">void</span> <span class="type">BusRTOS_Calc_BusLoad_10MS_Timer</span>(<span class="keyword">void</span>) {
+    <span class="comment">// 10ms 窗口在 1Mbps 下的最大理论带宽为 10,000 bits</span>
+    <span class="type">uint32_t</span> total_capacity_bits = <span class="number">10000</span>;
+    
+    <span class="type">uint32_t</span> spent = g_bus_monitor.used_bits_accumulator;
+    g_bus_monitor.used_bits_accumulator = <span class="number">0</span>; <span class="comment">// 快速清空进入下一滑动统计窗口</span>
+    
+    <span class="comment">// 防止越界异常保护</span>
+    <span class="keyword">if</span> (spent &gt; total_capacity_bits) spent = total_capacity_bits;
+    
+    <span class="comment">// 纯整数运算：直接规避昂贵的浮点计算单元(FPU)开销</span>
+    g_bus_monitor.current_bus_load_pct = (<span class="type">uint8_t</span>)((spent * <span class="number">100</span>) / total_capacity_bits);
+}</code></pre>
+
+    <h2>14. 为什么物理总线会发生突发性拥塞（Burst Congestion）</h2>
+    <p>总线突发性拥塞通常由以下运行状态衍生：</p>
+    <ol>
+        <li><b>多节点同时上电（Bootup Burst）</b>：所有外设电机上电瞬间同时向总线投递初始化就绪报文。</li>
+        <li><b>网络错误重发（ACK Failure/Error Passive）</b>：物理层由于强电磁干扰、接触不良导致 ACK 错误，bxCAN 发送器触发硬件无限自动重发（Automatic Retransmission）。</li>
+        <li><b>非实时事务重叠（SDO Congestion）</b>：主控高频调试读写参数，多个进程同时压入 SDO，导致总线利用率瞬间突破 95% 临界线。</li>
+    </ol>
+
+    <h2>15. 工业级抗拥塞系统设计</h2>
+    <p>针对突发拥塞，本规范制定了四个闭环层级的系统保障机制：</p>
+    <ul>
+        <li><b>相位错开（Phase Shifting）</b>：通过微秒级延时，错开各电机的物理投递节拍，从源头消灭仲裁碰撞。</li>
+        <li><b>总线限流（Rate Limiting）</b>：事务消息在入队前施加严格的发送周期频率限制。</li>
+        <li><b>预算管控（Budget Gatekeeping）</b>：利用前述的 1ms 发送配额机制封锁多余流量。</li>
+        <li><b>动态降级（Dynamic Degradation）</b>：当观测到实时总线负载率突破 85% 警戒线时，系统自动切断低优先级 SDO 与诊断帧的发送。</li>
+    </ul>
+
+    <h2>16. 核心控噪技术：相位交错（Phase Shift）</h2>
+    <p>绝不允许主控在定时器 0us 时刻无脑给全网 12 个电机同时投递控制指令。这会导致 12 帧报文在物理层疯狂碰撞进行硬仲裁，抬高总线瞬时噪声。应通过时间轴交错，实施微秒级<b>相位错开（Phase Shift Offsetting）</b>：</p>
+    <div class="diagram">
+[ 错误高强碰撞模式 (0us同时投递) ]
+0us:  ──> [Motor1, Motor2, Motor3, Motor4, Motor5, Motor6] ──> 发生强仲裁碰撞
+
+[ 规范相位交错模式 (100us时基细分) ]
+0us  : ──> Motor1 发送
+100us: ──> Motor2 发送
+200us: ──> Motor3 发送
+300us: ──> Motor4 发送 (总线差分波形平滑分布，物理层噪声降至最低)</div>
+
+    <h2>17. CiA402 分布式电机节点拓扑架构</h2>
+    <p>分布式控制中，主控不再负责复杂的 PWM 桥路开关或闭环 FOC 矢量计算，而是专注于高层规划。</p>
+    <div class="diagram">
+                        Master 主控层 (步态规划 / 逆运动学 IK 求解)
+                                      │
+                                      ▼ [基于标准控制字下发目标]
+                        CANopen-like 通信解耦层 (PDO / SDO)
+                                      │
+                                      ▼ [物理铜线差分网络]
+                          分布式智能电机节点 (嵌入式微控制器驱动板)
+                                      │
+               ┌──────────────────────┼──────────────────────┐
+               ▼                      ▼                      ▼
+       [位置闭环核心]          [速度闭环核心]          [电流闭环核心]
+       更新速率: 1 kHz        更新速率: 1 - 5 kHz     更新速率: 20 kHz</div>
+
+    <h2>18. 分布式控制的工业本质</h2>
+    <p>分布式控制的本质是：<b>主控下发目标期望量（Desired Trajectory Slice），节点在本地执行超高频闭环算法。</b>主控严禁插手单轴电机的细微瞬态控制。主控下发的只能是“在 $t = 34\,\text{ms}$ 时关节 1 必须到达位置 $\theta_1$”，电机节点内部依赖其 20 kHz 的电流环独立对抗现场反向负载扰动。</p>
+
+    <h2>19. PDO 与 SDO 的工程职责划分</h2>
+    <ul>
+        <li><b>PDO (Process Data Object，过程数据对象)</b>：用于<b>高频、无单帧确认、单向发布</b>的控制指令与底层反馈。例如目标位置、实际力矩、编码器多圈计数值。</li>
+        <li><b>SDO (Service Data Object，服务数据对象)</b>：用于<b>低频、带物理硬确认、点对点读写</b>的配置项。例如修改电机减速比、设置过流保护门限、在线捞取错误历史日志。</li>
+        <li><b>Heartbeat (节点守护心跳)</b>：分布式电机定期对外广播其当前 CiA402 状态机状态，用于主控网络层评估节点拓扑的物理健康度。</li>
+    </ul>
+
+    <h2>20. 机器人总线控制系统：三条工程铁律</h2>
+    <div class="blockquote">
+        <p>
+            <b>第一铁律：控制帧绝不排队</b> —— 宁可丢失旧控制块，也绝不发送积压的历史脏指令。<br>
+            <b>第二铁律：总线负载必须可观测</b> —— 通信网络不能是黑盒，每一比特的空间消耗必须置于软件监控之下。<br>
+            <b>第三铁律：非实时消息必须可降级</b> —— 当带宽面临灾难冲突时，事务消息必须为主控制流绝对让步。
+        </p>
+    </div>
+
+    <h2>21. 最终总结：系统本质是 Bus RTOS</h2>
+    <p>综上所述，高动态多轴机器人的底层开发，其本质根本不是编写一个“CAN 通信收发程序”，而是构建一个 <b>Bus RTOS（实时总线调度操作系统）</b>。它通过在物理层和应用层之间建立标准的对象字典映射、无锁环形缓冲区、时间预算拦截器以及相位交错引擎，使得脆弱、不确定性的串行网络转化为机器人级<b>高确定性、硬实时性、具备确定 Phase Margin 的共享计算资源网络</b>。</p>
+</div>
+
+</body>
+</html>
